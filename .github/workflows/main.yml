@@ -1,0 +1,53 @@
+name: Deploy Laravel Project to FTP
+
+on:
+  push:
+    branches:
+      - main # Change to your default branch
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2" # Change to your PHP version
+          extensions: mbstring, exif, pcntl, bcmath
+          ini-values: post_max_size=256M, upload_max_filesize=256M, max_execution_time=300
+          coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --no-dev --prefer-dist --optimize-autoloader --no-scripts
+
+      # Temporarily disabling the database connection to avoid errors
+      - name: Disable Database in .env
+        run: sed -i "s/DB_CONNECTION=mysql/DB_CONNECTION=null/" .env
+
+      - name: Enable Maintenance Mode (without DB)
+        run: php artisan down || true # Do not fail if already in maintenance mode
+
+      # Re-enabling the database connection after 'down'
+      - name: Re-enable Database in .env
+        run: sed -i "s/DB_CONNECTION=null/DB_CONNECTION=mysql/" .env
+
+      - name: Push files
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: ./
+
+      - name: Clear Cache (optional)
+        run: php artisan config:cache
+
+      - name: Disable Maintenance Mode
+        run: php artisan up || true # If it fails to disable, continue the deployment
+
+      - name: Verify Maintenance Mode Status
+        run: php artisan up && echo "Maintenance mode disabled" || echo "Failed to disable maintenance mode"
